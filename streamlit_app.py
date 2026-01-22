@@ -19,7 +19,6 @@ SHEET_NAME = "Robot_Conjoint_Data" # <--- CHECK THIS MATCHES YOUR GOOGLE SHEET N
 ADMIN_PASSWORD = "robot123"
 
 # --- GOOGLE SHEETS CONNECTION ---
-# Cached to prevent reloading on every interaction
 @st.cache_resource
 def get_google_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -102,8 +101,7 @@ all_attributes = list(details.keys())
 # ==========================================
 st.set_page_config(layout="wide", page_title="Robot Conjoint (Cloud)")
 
-# --- CSS FIX FOR DARK MODE ---
-# We removed specific color: #000 instructions so it adapts to theme
+# CSS Fixes
 st.markdown("""
 <style>
     .block-container { padding-top: 1rem; padding-bottom: 3rem; }
@@ -114,33 +112,18 @@ st.markdown("""
         background-color: #e6f0ff; padding: 6px 10px; 
         border-radius: 6px; display: inline-block; margin-bottom: 12px;
     }
-    /* Dark mode override for price tag text to ensure it stays readable on light blue */
     @media (prefers-color-scheme: dark) {
         .price-tag { color: #004080; } 
     }
 
     .attr-row { 
         margin-bottom: 8px; 
-        border-bottom: 1px solid #ccc; /* Generic grey works in both modes */
+        border-bottom: 1px solid #ccc; 
         padding-bottom: 6px; 
     }
-    
-    .attr-label { 
-        font-size: 13px; font-weight: 700; 
-        opacity: 0.8; 
-        text-transform: uppercase; letter-spacing: 0.5px; 
-    }
-    
-    .attr-val { 
-        font-size: 15px; font-weight: 600; 
-        margin-left: 5px; 
-    }
-    
-    .attr-desc { 
-        font-size: 13px; 
-        opacity: 0.7; 
-        display: block; margin-top: 2px; line-height: 1.3; 
-    }
+    .attr-label { font-size: 13px; font-weight: 700; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .attr-val { font-size: 15px; font-weight: 600; margin-left: 5px; }
+    .attr-desc { font-size: 13px; opacity: 0.7; display: block; margin-top: 2px; line-height: 1.3; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -243,7 +226,6 @@ def save_choice(choice_type, chosen=None, rejected1=None, rejected2=None):
         rows_to_add.append(format_row(rejected2, "Other", 0, "Buy"))
         msg = "✅ Vote Saved!"
 
-    # WRITE TO CLOUD
     try:
         sheet = get_google_sheet()
         if len(sheet.get_all_values()) == 0: sheet.append_row(cols)
@@ -252,9 +234,8 @@ def save_choice(choice_type, chosen=None, rejected1=None, rejected2=None):
         refresh_profiles()
         st.toast(msg)
         time.sleep(0.5)
-        
     except Exception as e:
-        st.error(f"❌ DATA NOT SAVED! Error: {e}") # <--- LOUD ERROR MESSAGE
+        st.error(f"❌ DATA NOT SAVED! Error: {e}")
 
 # ==========================================
 # 4. MAIN UI
@@ -329,4 +310,45 @@ with st.expander("📊 Analytics Dashboard (Live from Cloud)", expanded=False):
                 model = sm.OLS(y, X).fit()
                 utilities = model.params[1:]
                 
+                # --- FIXED INDENTATION HERE ---
                 def get_utility(attr, level):
+                    key = f"{attr}_{level}"
+                    if key in utilities: return utilities[key]
+                    return 0
+                # -----------------------------
+
+                st.divider()
+                col_d1, col_d2 = st.columns(2)
+                with col_d1:
+                    st.subheader("Relative Importance")
+                    ranges = {}
+                    for attr in analysis_cols:
+                        scores = [get_utility(attr, l) for l in details[attr]]
+                        ranges[attr] = max(scores) - min(scores)
+                    tot = sum(ranges.values())
+                    imp = {k: (v/tot)*100 for k,v in ranges.items()}
+                    imp_df = pd.DataFrame(list(imp.items()), columns=['Attribute', 'Value']).sort_values('Value')
+                    fig1, ax1 = plt.subplots(figsize=(6, 4))
+                    ax1.barh(imp_df['Attribute'], imp_df['Value'], color='#4e79a7')
+                    plt.tight_layout(); st.pyplot(fig1)
+
+                with col_d2:
+                    st.subheader("Win Rate (Raw)")
+                    win_rates = {}
+                    for attr in analysis_cols:
+                        for lvl in details[attr]:
+                            mask = df_buy[attr] == lvl
+                            if mask.sum() > 0:
+                                icon_str = icons.get(lvl, '')
+                                label_str = f"{icon_str} {lvl}"
+                                win_rates[label_str] = df_buy[mask]['Is_Chosen'].mean() * 100
+                    sorted_w = sorted(win_rates.items(), key=lambda x: x[1])[-15:]
+                    fig3, ax3 = plt.subplots(figsize=(6, 8))
+                    ax3.barh([x[0] for x in sorted_w], [x[1] for x in sorted_w], color='orange')
+                    plt.tight_layout(); st.pyplot(fig3)
+            else:
+                st.info("Collecting more data...")
+        else:
+            st.write("Google Sheet is empty.")
+    except Exception as e:
+        st.error(f"⚠️ Analytics Error: {e}")
