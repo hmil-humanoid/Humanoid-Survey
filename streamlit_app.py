@@ -54,7 +54,7 @@ icons = {
     "Tech Minimalist": "📟", "Friendly Avatar": "🤖", "Realistic Human": "👤",
     "Indoor Only": "🏠", "Patio & Driveway": "🚲", "All-Terrain Garden": "🌲",
     "2 Hours": "🪫", "4 Hours": "🔋", "8 Hours": "⚡",
-    "$8,000": "💲", "$20,000": "💲💲", "$65,000": "💲💲💲"
+    "$8,000 or $200 per Month": "💲", "$20,000 or $500 per Month": "💲💲", "$65,000 or $1625 per Month": "💲💲💲"
 }
 
 details = {
@@ -94,9 +94,9 @@ details = {
         "8 Hours": "Full work-day capability. Autonomously charges."
     },
     "Price": {
-        "$8,000": "Entry Level",
-        "$20,000": "Mid-Range",
-        "$65,000": "Luxury"
+        "$8,000 or $200 per Month": "Entry Level",
+        "$20,000 or $500 per Month": "Mid-Range",
+        "$65,000 or $1625 per Month": "Luxury"
     }
 }
 
