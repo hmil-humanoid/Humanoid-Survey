@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 # 1. SETUP: FILES & CONNECTIONS
 # ==========================================
 CONFIG_FILE = 'cloud_config.json' 
-SHEET_NAME = "Robot_Conjoint_Data" # <--- CHECK THIS MATCHES YOUR GOOGLE SHEET NAME
+SHEET_NAME = "Robot_Conjoint_Data" 
 ADMIN_PASSWORD = "robot123"
 
 # --- GOOGLE SHEETS CONNECTION ---
@@ -40,7 +40,6 @@ def save_config(features):
         json.dump(features, f)
 
 # --- ASSETS ---
-# Updated Prices here
 icons = {
     "Tidy & Fetch": "🧺", "Deep Clean": "🧽", "Full Home Chef": "👨‍🍳",
     "Flat-Surface Glider": "🛼", "Adaptive Rover": "🚜", "Full Bipedal Walker": "🏃",
@@ -104,27 +103,20 @@ all_attributes = list(details.keys())
 # ==========================================
 st.set_page_config(layout="wide", page_title="Robot Conjoint (Cloud)")
 
-# CSS Fixes
 st.markdown("""
 <style>
     .block-container { padding-top: 1rem; padding-bottom: 3rem; }
     .stButton button { width: 100%; border-radius: 8px; font-weight: bold; }
-    
     .price-tag { 
         font-size: 16px; font-weight: bold; color: #0066cc; 
         background-color: #e6f0ff; padding: 8px 10px; 
         border-radius: 6px; display: inline-block; margin-bottom: 12px;
-        white-space: nowrap; /* Keeps price on one line if possible */
+        white-space: nowrap;
     }
     @media (prefers-color-scheme: dark) {
         .price-tag { color: #004080; } 
     }
-
-    .attr-row { 
-        margin-bottom: 8px; 
-        border-bottom: 1px solid #ccc; 
-        padding-bottom: 6px; 
-    }
+    .attr-row { margin-bottom: 8px; border-bottom: 1px solid #ccc; padding-bottom: 6px; }
     .attr-label { font-size: 13px; font-weight: 700; opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px; }
     .attr-val { font-size: 15px; font-weight: 600; margin-left: 5px; }
     .attr-desc { font-size: 13px; opacity: 0.7; display: block; margin-top: 2px; line-height: 1.3; }
@@ -158,8 +150,9 @@ with st.sidebar:
             try:
                 sheet = get_google_sheet()
                 sheet.clear()
-                st.success("Google Sheet Cleared!")
+                st.success("Google Sheet Cleared! Refreshing...")
                 time.sleep(1)
+                st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
 
@@ -171,14 +164,9 @@ def is_valid_profile(profile):
         if profile["Mobility"] == "Flat-Surface Glider" and profile["Outdoor"] == "All-Terrain Garden": return False
     if "Reach" in active_features and "Payload" in active_features:
         if profile["Reach"] == "Compact (1.2m)" and profile["Payload"] == "Heavy Duty (40kg)": return False
-    
-    # Updated Price Validation Logic to match new strings
     if "Mobility" in active_features and "Autonomy" in active_features:
-        # Check against the new long string for $8,000
         if (profile["Mobility"] == "Full Bipedal Walker" and profile["Autonomy"] == "Full Home Chef" and "$8,000" in profile["Price"]): return False
-        # Check against the new long string for $65,000
         if (profile["Mobility"] == "Flat-Surface Glider" and profile["Autonomy"] == "Tidy & Fetch" and "$65,000" in profile["Price"]): return False
-        
     return True
 
 def calculate_overlap(p1, p2):
@@ -196,7 +184,7 @@ def generate_profile():
                 profile[attr] = list(details[attr].keys())[0]
         if is_valid_profile(profile): return profile
 
-# --- GOOGLE SHEETS SAVING ---
+# --- GOOGLE SHEETS SAVING (FIXED HEADER LOGIC) ---
 def refresh_profiles():
     max_attempts = 100
     pA = generate_profile()
@@ -217,7 +205,6 @@ def save_choice(choice_type, chosen=None, rejected1=None, rejected2=None):
     sess_id = st.session_state.session_id
     rows_to_add = []
     
-    # FIX: Exclude "Price" from the attributes list because we add it manually
     attr_cols = [a for a in all_attributes if a != "Price"]
     cols = ["Resp_ID", "Choice_Type", "Is_Chosen", "Option_Label", "Price"] + attr_cols
     
@@ -240,8 +227,17 @@ def save_choice(choice_type, chosen=None, rejected1=None, rejected2=None):
 
     try:
         sheet = get_google_sheet()
-        if len(sheet.get_all_values()) == 0: sheet.append_row(cols)
-        for r in rows_to_add: sheet.append_row(r)
+        
+        # --- ROBUST HEADER CHECK ---
+        # Fetch the very first row. If it's empty or doesn't exist, we add headers.
+        first_row = sheet.row_values(1)
+        if not first_row:
+            sheet.insert_row(cols, index=1)
+            time.sleep(0.5) # Wait for Google to process the insert
+            
+        for r in rows_to_add: 
+            sheet.append_row(r)
+            
         st.session_state.user_votes += 1
         refresh_profiles()
         st.toast(msg)
@@ -267,7 +263,6 @@ def display_option(col, profile, label, other1, other2):
     with col:
         with st.container(border=True):
             st.subheader(f"Option {label}")
-            # Updated to handle longer price string gracefully
             st.markdown(f"<div class='price-tag'>{icons[profile['Price']]} {profile['Price']}</div>", unsafe_allow_html=True)
             for attr in active_features:
                 val = profile[attr]
@@ -314,12 +309,10 @@ with st.expander("📊 Analytics Dashboard (Live from Cloud)", expanded=False):
             m4.metric("Walk-Away Rate", f"{walk_away_rate:.1f}%")
             
             if len(df_buy) // 3 >= 5:
-                # Update Analysis to use only active cols + Price
-                # FIX: Exclude duplicate Price column issues by rebuilding analysis_cols carefully
                 current_active = [a for a in active_features if a != "Price"]
                 analysis_cols = current_active + ["Price"]
                 
-                # Check if columns exist in DF (handles case where sheet has old data)
+                # Validation to prevent key errors if columns changed
                 valid_cols = [c for c in analysis_cols if c in df_buy.columns]
                 
                 X_raw = df_buy[valid_cols]
