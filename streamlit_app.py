@@ -40,6 +40,7 @@ def save_config(features):
         json.dump(features, f)
 
 # --- ASSETS ---
+# Updated Prices here
 icons = {
     "Tidy & Fetch": "🧺", "Deep Clean": "🧽", "Full Home Chef": "👨‍🍳",
     "Flat-Surface Glider": "🛼", "Adaptive Rover": "🚜", "Full Bipedal Walker": "🏃",
@@ -48,7 +49,9 @@ icons = {
     "Tech Minimalist": "📟", "Friendly Avatar": "🤖", "Realistic Human": "👤",
     "Indoor Only": "🏠", "Patio & Driveway": "🚲", "All-Terrain Garden": "🌲",
     "2 Hours": "🪫", "4 Hours": "🔋", "8 Hours": "⚡",
-    "$8,000": "💲", "$20,000": "💲💲", "$65,000": "💲💲💲"
+    "$8,000 or $200/mo": "💲", 
+    "$20,000 or $500/mo": "💲💲", 
+    "$65,000 or $1,625/mo": "💲💲💲"
 }
 
 details = {
@@ -88,9 +91,9 @@ details = {
         "8 Hours": "Full work-day capability. Autonomously charges."
     },
     "Price": {
-        "$8,000": "Entry Level",
-        "$20,000": "Mid-Range",
-        "$65,000": "Luxury"
+        "$8,000 or $200/mo": "Entry Level",
+        "$20,000 or $500/mo": "Mid-Range",
+        "$65,000 or $1,625/mo": "Luxury"
     }
 }
 
@@ -108,9 +111,10 @@ st.markdown("""
     .stButton button { width: 100%; border-radius: 8px; font-weight: bold; }
     
     .price-tag { 
-        font-size: 18px; font-weight: bold; color: #0066cc; 
-        background-color: #e6f0ff; padding: 6px 10px; 
+        font-size: 16px; font-weight: bold; color: #0066cc; 
+        background-color: #e6f0ff; padding: 8px 10px; 
         border-radius: 6px; display: inline-block; margin-bottom: 12px;
+        white-space: nowrap; /* Keeps price on one line if possible */
     }
     @media (prefers-color-scheme: dark) {
         .price-tag { color: #004080; } 
@@ -167,9 +171,14 @@ def is_valid_profile(profile):
         if profile["Mobility"] == "Flat-Surface Glider" and profile["Outdoor"] == "All-Terrain Garden": return False
     if "Reach" in active_features and "Payload" in active_features:
         if profile["Reach"] == "Compact (1.2m)" and profile["Payload"] == "Heavy Duty (40kg)": return False
+    
+    # Updated Price Validation Logic to match new strings
     if "Mobility" in active_features and "Autonomy" in active_features:
-        if (profile["Mobility"] == "Full Bipedal Walker" and profile["Autonomy"] == "Full Home Chef" and profile["Price"] == "$8,000"): return False
-        if (profile["Mobility"] == "Flat-Surface Glider" and profile["Autonomy"] == "Tidy & Fetch" and profile["Price"] == "$65,000"): return False
+        # Check against the new long string for $8,000
+        if (profile["Mobility"] == "Full Bipedal Walker" and profile["Autonomy"] == "Full Home Chef" and "$8,000" in profile["Price"]): return False
+        # Check against the new long string for $65,000
+        if (profile["Mobility"] == "Flat-Surface Glider" and profile["Autonomy"] == "Tidy & Fetch" and "$65,000" in profile["Price"]): return False
+        
     return True
 
 def calculate_overlap(p1, p2):
@@ -207,11 +216,14 @@ if 'profile_A' not in st.session_state: refresh_profiles()
 def save_choice(choice_type, chosen=None, rejected1=None, rejected2=None):
     sess_id = st.session_state.session_id
     rows_to_add = []
-    cols = ["Resp_ID", "Choice_Type", "Is_Chosen", "Option_Label", "Price"] + all_attributes
+    
+    # FIX: Exclude "Price" from the attributes list because we add it manually
+    attr_cols = [a for a in all_attributes if a != "Price"]
+    cols = ["Resp_ID", "Choice_Type", "Is_Chosen", "Option_Label", "Price"] + attr_cols
     
     def format_row(profile, label, is_chosen, c_type):
         row_data = [sess_id, c_type, is_chosen, label, profile["Price"]]
-        for attr in all_attributes:
+        for attr in attr_cols:
             row_data.append(profile.get(attr, ""))
         return row_data
 
@@ -255,6 +267,7 @@ def display_option(col, profile, label, other1, other2):
     with col:
         with st.container(border=True):
             st.subheader(f"Option {label}")
+            # Updated to handle longer price string gracefully
             st.markdown(f"<div class='price-tag'>{icons[profile['Price']]} {profile['Price']}</div>", unsafe_allow_html=True)
             for attr in active_features:
                 val = profile[attr]
@@ -301,8 +314,15 @@ with st.expander("📊 Analytics Dashboard (Live from Cloud)", expanded=False):
             m4.metric("Walk-Away Rate", f"{walk_away_rate:.1f}%")
             
             if len(df_buy) // 3 >= 5:
-                analysis_cols = active_features + ["Price"]
-                X_raw = df_buy[analysis_cols]
+                # Update Analysis to use only active cols + Price
+                # FIX: Exclude duplicate Price column issues by rebuilding analysis_cols carefully
+                current_active = [a for a in active_features if a != "Price"]
+                analysis_cols = current_active + ["Price"]
+                
+                # Check if columns exist in DF (handles case where sheet has old data)
+                valid_cols = [c for c in analysis_cols if c in df_buy.columns]
+                
+                X_raw = df_buy[valid_cols]
                 y = df_buy['Is_Chosen']
                 X = pd.get_dummies(X_raw, drop_first=True).astype(int)
                 X = sm.add_constant(X)
@@ -310,19 +330,17 @@ with st.expander("📊 Analytics Dashboard (Live from Cloud)", expanded=False):
                 model = sm.OLS(y, X).fit()
                 utilities = model.params[1:]
                 
-                # --- FIXED INDENTATION HERE ---
                 def get_utility(attr, level):
                     key = f"{attr}_{level}"
                     if key in utilities: return utilities[key]
                     return 0
-                # -----------------------------
 
                 st.divider()
                 col_d1, col_d2 = st.columns(2)
                 with col_d1:
                     st.subheader("Relative Importance")
                     ranges = {}
-                    for attr in analysis_cols:
+                    for attr in valid_cols:
                         scores = [get_utility(attr, l) for l in details[attr]]
                         ranges[attr] = max(scores) - min(scores)
                     tot = sum(ranges.values())
@@ -335,7 +353,7 @@ with st.expander("📊 Analytics Dashboard (Live from Cloud)", expanded=False):
                 with col_d2:
                     st.subheader("Win Rate (Raw)")
                     win_rates = {}
-                    for attr in analysis_cols:
+                    for attr in valid_cols:
                         for lvl in details[attr]:
                             mask = df_buy[attr] == lvl
                             if mask.sum() > 0:
